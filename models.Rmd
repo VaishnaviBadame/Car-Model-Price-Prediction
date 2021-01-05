@@ -1,0 +1,223 @@
+---
+title: 'Final Exam'
+author: 'Vaishnavi Badame'
+date: '2020-08-11'
+output:
+  pdf_document:
+    latex_engine: xelatex
+---
+
+Question : How much should I expect to pay for a used Toyota Corolla?
+
+```{r part1}
+library(knitr)
+options(warn = -1)
+opts_chunk$set(tidy.opts = list(width.cutoff = 50), tidy = TRUE)
+library(MASS)
+library(corrplot)
+require(caTools) 
+library(Metrics)
+library(leaps)
+library(glmnet)
+library(DMwR)
+```
+
+```{r part2}
+setwd("/Users/vaishnavibadame/downloads")
+Toyota <- read.csv(file = 'toyotaCorolla.csv', sep = ',', header = TRUE,
+                   na.strings = '?', stringsAsFactors = T, encoding = 'UTF-8')
+```
+
+# Dataset Description  and Data Cleaning 
+The data set uploaded has 37 attributes and 1436 numbers of records. The data set has 24 qualitative variables that may have been assigned characters or a numerical 1 and 0 for a 'Yes' and 'No' value respectively and has 13 quantitative variables. I have planned to split the data set in the 70:30 ratio for training data set and test data set respectively.
+
+```{r part3}
+dim(Toyota)
+summary(Toyota)
+```
+
+The data set has null values which have been omitted using na.omit() and the columns-'Price' and 'Tow_Bar' had special characters apart from digits for which, the specific records with such special character values are not considered. Apart from that, I had to convert the class of the 'Price' column back to numeric for further data analysis using the 'lapply' function and removed the extreme value(outlier) in the following manner
+
+```{r part4}
+nrow(Toyota)
+Toyota <- na.omit(Toyota)
+Toyota <- subset(Toyota, grepl('[0-9]+', Toyota$Price))
+Toyota <- subset(Toyota, grepl('[0-9]', Toyota$Tow_Bar))
+Toyota[,c("Price")]<-lapply(c("Price"), function(fn)
+  as.numeric(as.character(Toyota[,fn])))
+Toyota <- subset(Toyota, Toyota$Price < 9999990)
+nrow(Toyota)
+```
+Four records were removed from the data set after data-cleaning.
+
+# Data Exploration, Data Visualization and Feature Selection:
+
+Pairs and correlation matrix for the quantitative variables od the data set:
+
+```{r part5}
+pairs(Toyota[3:8])
+pairs(Toyota[c(9:12,3)])
+pairs(Toyota[c(13:17,3)])
+```
+
+
+```{r part6}
+Toyota.cor=cor(Toyota[c(3:7,9,12,13,15:17)])
+corrplot(Toyota.cor)
+```
+
+Hence we can infer from the above graphs and matrix that Age_08_04, Mfg_Year, KM, HP, and Weight have a fair significance with respect to the Price variable as their values in the correlation matrix are near to -1 or 1.
+
+Further, I've generated some box plots and scatter plots to explore the data:
+
+```{r part7}
+par(mfrow=c(2,2))
+plot(Toyota$Price~Toyota$Age_08_04,
+        xlab="Age_08_04", ylab="Price"
+     
+)
+boxplot(Toyota$Price~Toyota$Powered_Windows,
+        xlab="Powered_Windows", ylab="Price"
+)
+plot(Toyota$Price~Toyota$KM,
+     xlab="KM", ylab="Price"
+)
+boxplot(Toyota$Price~Toyota$Fuel_Type,
+        xlab="Fuel_Type", ylab="Price"
+)
+```
+
+From the above plots, it can be said that all the above variables have a relationship with the 'Price' variable due to their pattern in plots and inter-quantile ranges in the box plots. Similarly, I've further analyzed more variables with respect to the Price using boxplots as below:
+
+```{r part8}
+par(mfrow=c(2,2))
+boxplot(Toyota$Price~Toyota$HP,
+        xlab="HP", ylab="Price"
+)
+boxplot(Toyota$Price~Toyota$Doors,
+        xlab="Doors", ylab="Price"
+)
+boxplot(Toyota$Price~Toyota$Guarantee_Period,
+        xlab="Guarantee_Period", ylab="Price"
+)
+boxplot(Toyota$Price~Toyota$Automatic_airco,
+        xlab="Automatic_airco", ylab="Price"
+)
+```
+
+In order to select the best features for our models, I've performed Forward Step Wise Selection on all the variables except 'Model' and 'Id' as these are qualitative variables and have a large number of distinctive records.
+
+```{r part9}
+attach(Toyota)
+step.model<-regsubsets(Price ~ .-Model-Id, data = Toyota, 
+                       really.big = TRUE, method="forward")
+summary(step.model)
+```
+
+This method gives us the variables which are significant for our target variables which can be recognized by the '*' in the respective variable columns. Thus I have further considered the following variables: Mfg_Year, Fuel_Type, HP, KM, Weight, Guarantee_Period, Quarterly_Tax, Powered_Windows and Automatic_airco
+
+# Regression Algorithms:
+
+Since the problem is to predict the price for a used Toyota Corolla, it is a regression problem. I've implemented the following regression algorithms on the given dataset for the problem: 
+
+* Linear Regression
+* Lasso Regression
+* Ridge Regression.
+
+Splitting the data set into train and test:
+
+```{r part10}
+set.seed(1)
+Toyota.sample = sample.split(Toyota,SplitRatio = 0.70) 
+train =subset(Toyota,Toyota.sample ==TRUE) 
+test=subset(Toyota, Toyota.sample==FALSE)
+x <- model.matrix(Price~Mfg_Year+KM+Fuel_Type+HP+Quarterly_Tax+
+                    Weight+Guarantee_Period+Automatic_airco+
+                    Powered_Windows)
+y <- Price
+x_train <- model.matrix(train$Price~train$Mfg_Year+train$KM+
+                          train$Fuel_Type+train$HP+train$Quarterly_Tax+
+                          train$Weight+train$Guarantee_Period+
+                          train$Automatic_airco+train$Powered_Windows)[,-1]
+y_train <- train$Price
+x_test <-  model.matrix(test$Price~test$Mfg_Year+test$KM+test$Fuel_Type+test$HP+
+                          test$Quarterly_Tax+test$Weight+test$Guarantee_Period+
+                          test$Automatic_airco+test$Powered_Windows)[,-1]
+y_test <- test$Price
+```
+
+# Linear Regression:
+```{r part11}
+lm.model <- lm(Price~Mfg_Year+KM+Fuel_Type+HP+Quarterly_Tax+
+               Weight+Guarantee_Period+Automatic_airco+Powered_Windows, 
+             data=train)
+summary(lm.model)
+par(mfrow=c(2,2))
+plot(lm.model)
+test_pred <- predict(lm.model,data = test)
+rmse(test$Price,test_pred)
+```
+For the residual vs fitted graph, we can say that the error terms are showing suﬀicient pattern and is a bit non-linear. We have probably left out something in the model. Data point 961 in ‘Residual vs Leverage’ plot has high leverage with a small residual magnitude. Since the Test RMSE is greater than Train RMSE I have further opted for Lasso Regression and Ridge Regression.
+
+# Lasso Regression:
+```{r part12}
+lasso.mod <- glmnet(x_train, y_train, alpha = 1, thresh = 1e-12) 
+cv.out <- cv.glmnet(x_train, y_train, alpha = 1)
+plot(cv.out)
+plot(cv.out$glmnet.fit, xvar = "lambda", label = TRUE) 
+legend("topright", lwd = 1, col = 1:6, legend = colnames(x),
+       cex = 0.4)
+bestlam <- cv.out$lambda.min
+bestlam
+lasso.pred <- predict(lasso.mod, s = bestlam, newx = x_test)
+sst <- sum((y_test-mean(y_test))^2)
+sse <-sum((lasso.pred-y_test)^2)
+rsq <- 1-(sse/sst)
+rsq
+rmse(y_test,lasso.pred)
+regr.eval(trues = y_test, preds = lasso.pred)
+```
+The Lasso regression greatly lowers the RMSE value as compared to Linear Regression of Test variable.
+
+# Ridge Regression:
+```{r part13}
+ridge.mod <- glmnet(x_train, y_train, alpha = 0, thresh = 1e-12) 
+cv.out <- cv.glmnet(x_train, y_train, alpha = 0)
+plot(cv.out)
+plot(cv.out$glmnet.fit, xvar = "lambda", label = TRUE) 
+legend("topright", lwd = 1, col = 1:6, legend = colnames(x),
+        cex = 0.4)
+bestlam <- cv.out$lambda.min
+bestlam
+ridge.pred <- predict(ridge.mod, s = bestlam, newx = x_test)
+sst <- sum((y_test-mean(y_test))^2)
+sse <- sum((ridge.pred-y_test)^2)
+rsq <- 1-(sse/sst)
+rsq
+rmse(test$Price,ridge.pred)
+regr.eval(trues = y_test, preds = ridge.pred)
+```
+Among all the above regression algorithms Ridge regression has the least RMSE value.
+
+# Performance of Algorithms:
+RMSE Values for implemented algorithms:
+
+* Linear Regression: 4406.9
+* Lasso Regression: 1228.7
+* Ridge Regression: 1221.7
+
+Since Linear Regression has the worst performance I've further compared Lasso and Regression to find the best algorithm for our solution.
+
+R-Square values:
+
+* Lasso Regression: 0.884
+* Ridge Regression: 0.886
+
+The higher value for R square indicates slightly greater accuracy in the Ridge Regression.
+
+# Conclusion
+Thus considering the performances of the algorithms we can conclude that Ridge Regression is the best performing algorithm for our problem and the algorithms can be ranked as : 
+
+* Ridge Regression > Lasso Regression > Linear Regression.
+
+Hence, we can use the generated Ridge Regression model in order to predict the price of a used Toyota Corolla more accurately as compared to other models generated above.
